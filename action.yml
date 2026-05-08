@@ -1,0 +1,381 @@
+name: "SeoChecker Crawl"
+description: "Trigger a SeoChecker CI crawl, wait for completion, and optionally fail by policy."
+
+inputs:
+  api_base_url:
+    description: "Base URL of the SeoChecker API host."
+    required: true
+  api_key:
+    description: "SeoChecker CI API key."
+    required: true
+  sitemap_url:
+    description: "Sitemap URL to crawl."
+    required: true
+  fail_mode:
+    description: "Failure policy: none, error, or errorOrWarning."
+    required: false
+    default: "error"
+  comment_on_pr:
+    description: "Post a crawl summary comment on PRs."
+    required: false
+    default: "false"
+  github_token:
+    description: "GitHub token for PR comments (required when comment_on_pr=true)."
+    required: false
+    default: ""
+  repository:
+    description: "Repository slug (owner/repo)."
+    required: false
+    default: ${{ github.repository }}
+  ref_name:
+    description: "Git ref for this run."
+    required: false
+    default: ${{ github.ref }}
+  commit_sha:
+    description: "Commit SHA for this run."
+    required: false
+    default: ${{ github.sha }}
+  workflow_run_id:
+    description: "GitHub workflow run ID."
+    required: false
+    default: ${{ github.run_id }}
+  workflow_run_url:
+    description: "GitHub workflow run URL."
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  pull_request_number:
+    description: "PR number associated with this run."
+    required: false
+    default: ${{ github.event.pull_request.number || '' }}
+
+outputs:
+  job_id:
+    description: "SeoChecker job ID."
+    value: ${{ steps.start.outputs.job_id }}
+  trigger_url:
+    description: "Resolved trigger endpoint URL used to start the crawl."
+    value: ${{ steps.start.outputs.trigger_url }}
+  status_url:
+    description: "Status URL for the crawl job."
+    value: ${{ steps.start.outputs.status_url }}
+  status:
+    description: "Final crawl status."
+    value: ${{ steps.poll.outputs.status }}
+  errors:
+    description: "Final crawl error count."
+    value: ${{ steps.poll.outputs.errors }}
+  warnings:
+    description: "Final crawl warning count."
+    value: ${{ steps.poll.outputs.warnings }}
+  pages:
+    description: "Final crawled page count."
+    value: ${{ steps.poll.outputs.pages }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate required configuration
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        API_KEY: ${{ inputs.api_key }}
+        SITEMAP_URL: ${{ inputs.sitemap_url }}
+      run: |
+        set -euo pipefail
+        API_KEY="$(echo "${API_KEY}" | tr -d '\r\n' | xargs)"
+        if [[ -z "${API_BASE_URL}" ]]; then
+          echo "api_base_url input is required."
+          exit 1
+        fi
+        if [[ -z "${API_KEY}" ]]; then
+          echo "api_key input is required."
+          exit 1
+        fi
+        if [[ "${#API_KEY}" -gt 200 ]]; then
+          echo "api_key looks too long (${#API_KEY} chars)."
+          echo "Use a SeoChecker CI API key, not a JWT/OIDC token."
+          exit 1
+        fi
+        if [[ -z "${SITEMAP_URL}" ]]; then
+          echo "sitemap_url input is required."
+          exit 1
+        fi
+
+    - name: Start CI crawl run
+      id: start
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        API_KEY: ${{ inputs.api_key }}
+        SITEMAP_URL: ${{ inputs.sitemap_url }}
+        FAIL_MODE: ${{ inputs.fail_mode }}
+        REPO: ${{ inputs.repository }}
+        REF_NAME: ${{ inputs.ref_name }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        RUN_ID: ${{ inputs.workflow_run_id }}
+        RUN_URL: ${{ inputs.workflow_run_url }}
+        PR_NUMBER: ${{ inputs.pull_request_number }}
+      run: |
+        set -euo pipefail
+        API_BASE_URL="$(echo "${API_BASE_URL}" | tr -d '\r\n' | xargs)"
+        API_KEY="$(echo "${API_KEY}" | tr -d '\r\n' | xargs)"
+        payload="$(python - <<'PY'
+        import json
+        import os
+        pr_num = os.environ.get("PR_NUMBER", "").strip()
+        data = {
+            "sitemapUrl": os.environ["SITEMAP_URL"],
+            "failMode": os.environ["FAIL_MODE"],
+            "repository": os.environ["REPO"],
+            "refName": os.environ["REF_NAME"],
+            "commitSha": os.environ["COMMIT_SHA"],
+            "workflowRunId": os.environ["RUN_ID"],
+            "workflowRunUrl": os.environ["RUN_URL"],
+        }
+        if pr_num:
+            data["pullRequestNumber"] = int(pr_num)
+        print(json.dumps(data))
+        PY
+        )"
+
+        call_trigger() {
+          local url="$1"
+          local code
+          code=$(curl --silent --show-error --output /tmp/trigger-ci-response.txt --write-out "%{http_code}" \
+            --dump-header /tmp/trigger-ci-headers.txt \
+            --header "Authorization: Bearer ${API_KEY}" \
+            --header "x-ci-api-key: ${API_KEY}" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "${payload}" \
+            "${url}")
+          echo "${code}"
+        }
+
+        normalized="${API_BASE_URL%/}"
+        candidate_urls=()
+        if [[ "${normalized}" == */api/trigger/ci || "${normalized}" == */trigger/ci || "${normalized}" == */api/TriggerCiCrawl || "${normalized}" == */TriggerCiCrawl ]]; then
+          candidate_urls+=("${normalized}")
+        else
+          candidate_urls+=(
+            "${normalized}/api/trigger/ci"
+            "${normalized}/trigger/ci"
+            "${normalized}/api/TriggerCiCrawl"
+            "${normalized}/TriggerCiCrawl"
+          )
+        fi
+
+        response=""
+        http_code=""
+        selected_url=""
+        saw_static_methods_405="false"
+        for url in "${candidate_urls[@]}"; do
+          echo "Calling ${url}"
+          http_code="$(call_trigger "${url}")"
+          if [[ "${http_code}" -ge 200 && "${http_code}" -lt 300 ]]; then
+            selected_url="${url}"
+            response="$(cat /tmp/trigger-ci-response.txt)"
+            break
+          fi
+
+          echo "Attempt failed with HTTP ${http_code}"
+          allow_header="$(awk 'BEGIN{IGNORECASE=1} /^Allow:/{print; exit}' /tmp/trigger-ci-headers.txt || true)"
+          if [[ -n "${allow_header}" ]]; then
+            echo "${allow_header}"
+            if [[ "${http_code}" == "405" && "${allow_header}" =~ [Aa]llow:[[:space:]]*GET,\ HEAD,\ OPTIONS ]]; then
+              saw_static_methods_405="true"
+            fi
+          fi
+
+          if [[ "${url}" == */api/trigger/ci && ( "${http_code}" == "401" || "${http_code}" == "403" ) ]]; then
+            echo "Reached CI trigger endpoint but authentication failed (HTTP ${http_code})."
+            echo "Verify api_key matches Trigger:CiApiKey (or generated CI key in Cosmos)."
+            echo "--- response body ---"
+            cat /tmp/trigger-ci-response.txt || true
+            exit 1
+          fi
+        done
+
+        if [[ -z "${response}" ]]; then
+          echo "CI trigger failed after trying ${#candidate_urls[@]} URL shape(s)."
+          echo "api_base_url input was: ${API_BASE_URL}"
+          if [[ "${saw_static_methods_405}" == "true" ]]; then
+            echo "Detected static-site response (Allow: GET, HEAD, OPTIONS)."
+            echo "api_base_url likely points at a frontend/CDN route, not the Functions API host."
+          fi
+          echo "--- last response headers ---"
+          cat /tmp/trigger-ci-headers.txt || true
+          echo "--- last response body ---"
+          cat /tmp/trigger-ci-response.txt || true
+          exit 1
+        fi
+
+        echo "CI trigger started via ${selected_url}"
+
+        job_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["jobId"])' <<< "${response}")"
+        status_url="$(python -c 'import json,sys; print(json.load(sys.stdin)["statusUrl"])' <<< "${response}")"
+        echo "job_id=${job_id}" >> "$GITHUB_OUTPUT"
+        echo "trigger_url=${selected_url}" >> "$GITHUB_OUTPUT"
+        echo "status_url=${status_url}" >> "$GITHUB_OUTPUT"
+        echo "Started crawl job ${job_id}"
+
+    - name: Poll crawl to completion
+      id: poll
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        API_KEY: ${{ inputs.api_key }}
+        TRIGGER_URL: ${{ steps.start.outputs.trigger_url }}
+      run: |
+        set -euo pipefail
+        raw_status_url="${{ steps.start.outputs.status_url }}"
+        api_base_url="${API_BASE_URL%/}"
+        api_key="$(echo "${API_KEY}" | tr -d '\r\n' | xargs)"
+        trigger_url="${TRIGGER_URL}"
+        trigger_origin="$(python -c 'from urllib.parse import urlsplit; import os; u=os.environ["TRIGGER_URL"].strip(); p=urlsplit(u); print(f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else "")')"
+
+        candidate_status_urls=()
+        if [[ "${raw_status_url}" =~ ^https?:// ]]; then
+          candidate_status_urls+=("${raw_status_url}")
+        elif [[ "${raw_status_url}" = /* ]]; then
+          [[ -n "${trigger_origin}" ]] && candidate_status_urls+=("${trigger_origin}${raw_status_url}")
+          candidate_status_urls+=("${api_base_url}${raw_status_url}")
+        else
+          [[ -n "${trigger_origin}" ]] && candidate_status_urls+=("${trigger_origin}/${raw_status_url}")
+          candidate_status_urls+=("${api_base_url}/${raw_status_url}")
+          if [[ -n "${trigger_url}" ]]; then
+            joined="$(RAW_STATUS_URL="${raw_status_url}" TRIGGER_URL="${trigger_url}" python -c 'from urllib.parse import urljoin; import os; print(urljoin(os.environ["TRIGGER_URL"], os.environ["RAW_STATUS_URL"]))')"
+            candidate_status_urls+=("${joined}")
+          fi
+        fi
+
+        deduped_status_urls=()
+        for candidate in "${candidate_status_urls[@]}"; do
+          skip="false"
+          for existing in "${deduped_status_urls[@]}"; do
+            if [[ "${candidate}" == "${existing}" ]]; then
+              skip="true"
+              break
+            fi
+          done
+          if [[ "${skip}" == "false" && -n "${candidate}" ]]; then
+            deduped_status_urls+=("${candidate}")
+          fi
+        done
+        candidate_status_urls=("${deduped_status_urls[@]}")
+
+        status_url=""
+        for candidate in "${candidate_status_urls[@]}"; do
+          if [[ -z "${candidate}" ]]; then
+            continue
+          fi
+          echo "Probing status URL ${candidate}"
+          if curl --silent --show-error --fail \
+            --header "Authorization: Bearer ${api_key}" \
+            --header "x-ci-api-key: ${api_key}" \
+            --output /tmp/seo-crawl-probe.txt \
+            "${candidate}" >/dev/null 2>&1; then
+            status_url="${candidate}"
+            break
+          fi
+        done
+
+        if [[ -z "${status_url}" ]]; then
+          echo "Unable to resolve a working status URL from '${raw_status_url}'."
+          echo "Tried:"
+          for candidate in "${candidate_status_urls[@]}"; do
+            echo "- ${candidate}"
+          done
+          exit 1
+        fi
+
+        echo "Polling status URL ${status_url}"
+        deadline=$((SECONDS + 1800))
+        while true; do
+          response="$(curl --silent --show-error --fail-with-body \
+            --header "Authorization: Bearer ${api_key}" \
+            --header "x-ci-api-key: ${api_key}" \
+            "${status_url}")"
+          status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "${response}")"
+          if [[ "${status}" == "complete" || "${status}" == "failed" ]]; then
+            errors="$(python -c 'import json,sys; print(json.load(sys.stdin).get("errorCount",0))' <<< "${response}")"
+            warnings="$(python -c 'import json,sys; print(json.load(sys.stdin).get("warningCount",0))' <<< "${response}")"
+            pages="$(python -c 'import json,sys; print(json.load(sys.stdin).get("totalPages") or 0)' <<< "${response}")"
+            echo "status=${status}" >> "$GITHUB_OUTPUT"
+            echo "errors=${errors}" >> "$GITHUB_OUTPUT"
+            echo "warnings=${warnings}" >> "$GITHUB_OUTPUT"
+            echo "pages=${pages}" >> "$GITHUB_OUTPUT"
+            {
+              echo "### SEO Crawl Result"
+              echo ""
+              echo "- Status: \`${status}\`"
+              echo "- Pages: \`${pages}\`"
+              echo "- Errors: \`${errors}\`"
+              echo "- Warnings: \`${warnings}\`"
+              echo "- Job ID: \`${{ steps.start.outputs.job_id }}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if (( SECONDS > deadline )); then
+            echo "Timed out waiting for crawl completion."
+            exit 1
+          fi
+          sleep 5
+        done
+
+    - name: Comment findings on PR
+      if: ${{ inputs.comment_on_pr == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const status = '${{ steps.poll.outputs.status }}';
+          const errors = Number('${{ steps.poll.outputs.errors }}');
+          const warnings = Number('${{ steps.poll.outputs.warnings }}');
+          const pages = Number('${{ steps.poll.outputs.pages }}');
+          const jobId = '${{ steps.start.outputs.job_id }}';
+          const body = [
+            '### SEO Crawl Result',
+            '',
+            `- Status: \`${status}\``,
+            `- Pages: \`${pages}\``,
+            `- Errors: \`${errors}\``,
+            `- Warnings: \`${warnings}\``,
+            `- Job ID: \`${jobId}\``,
+            '',
+            'Review full details in the SeoChecker job history UI.'
+          ].join('\n');
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body
+          });
+
+    - name: Apply fail policy
+      shell: bash
+      env:
+        FAIL_MODE: ${{ inputs.fail_mode }}
+      run: |
+        set -euo pipefail
+        mode="${FAIL_MODE}"
+        status="${{ steps.poll.outputs.status }}"
+        errors="${{ steps.poll.outputs.errors }}"
+        warnings="${{ steps.poll.outputs.warnings }}"
+
+        if [[ "${status}" == "failed" ]]; then
+          echo "Crawl execution failed."
+          exit 1
+        fi
+
+        if [[ "${mode}" == "error" && "${errors}" -gt 0 ]]; then
+          echo "Failing build because errors > 0 (${errors})."
+          exit 1
+        fi
+
+        if [[ "${mode}" == "errorOrWarning" && ( "${errors}" -gt 0 || "${warnings}" -gt 0 ) ]]; then
+          echo "Failing build because errors (${errors}) or warnings (${warnings}) are present."
+          exit 1
+        fi
+
+        echo "Crawl completed and fail policy passed."
