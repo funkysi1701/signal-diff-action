@@ -1,6 +1,6 @@
 # SeoChecker Crawl Action
 
-Trigger a [SeoChecker](https://github.com/funkysi1701/seo-checker) CI crawl from any GitHub Actions workflow, poll until completion, and optionally fail the build based on crawl results.
+Trigger a SeoChecker CI crawl from any GitHub Actions workflow, poll until completion, and optionally fail the build based on crawl results.
 
 ## Usage
 
