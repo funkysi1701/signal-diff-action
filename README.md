@@ -1,14 +1,14 @@
-# SeoChecker Crawl Action
+# Signal Diff Crawl Action
 
-Trigger a SeoChecker CI crawl from any GitHub Actions workflow, poll until completion, and optionally fail the build based on crawl results.
+Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until completion, and optionally fail the build based on crawl results.
 
 ## Usage
 
 ```yaml
-- uses: funkysi1701/seo-checker-action@v1
+- uses: funkysi1701/signal-diff-action@v1
   with:
-    api_base_url: ${{ secrets.SEOCHECKER_API_BASE_URL }}
-    api_key: ${{ secrets.SEOCHECKER_CI_API_KEY }}
+    api_base_url: ${{ secrets.SIGNALDIFF_API_BASE_URL }}
+    api_key: ${{ secrets.SIGNALDIFF_CI_API_KEY }}
     sitemap_url: https://example.com/sitemap.xml
 ```
 
@@ -16,8 +16,8 @@ Trigger a SeoChecker CI crawl from any GitHub Actions workflow, poll until compl
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `api_base_url` | yes | | Base URL of the SeoChecker API host |
-| `api_key` | yes | | SeoChecker CI API key |
+| `api_base_url` | yes | | Base URL of the Signal Diff API host |
+| `api_key` | yes | | Signal Diff CI API key |
 | `sitemap_url` | yes | | Sitemap URL to crawl |
 | `fail_mode` | no | `error` | Failure policy: `none`, `error`, or `errorOrWarning` |
 | `comment_on_pr` | no | `false` | Post a crawl summary comment on PRs |
@@ -33,7 +33,7 @@ Trigger a SeoChecker CI crawl from any GitHub Actions workflow, poll until compl
 
 | Output | Description |
 |---|---|
-| `job_id` | SeoChecker job ID |
+| `job_id` | Signal Diff job ID |
 | `trigger_url` | Resolved trigger endpoint URL used to start the crawl |
 | `status_url` | Status URL for the crawl job |
 | `status` | Final crawl status (`complete` or `failed`) |
@@ -54,7 +54,7 @@ The workflow always fails if the crawl itself fails to complete.
 ## Full example
 
 ```yaml
-name: SEO Crawl
+name: Signal Diff Crawl
 on:
   pull_request:
   workflow_dispatch:
@@ -66,10 +66,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: funkysi1701/seo-checker-action@v1
+      - uses: funkysi1701/signal-diff-actio@v1
         with:
-          api_base_url: ${{ secrets.SEOCHECKER_API_BASE_URL }}
-          api_key: ${{ secrets.SEOCHECKER_CI_API_KEY }}
+          api_base_url: ${{ secrets.SIGNALDIFF_API_BASE_URL }}
+          api_key: ${{ secrets.SIGNALDIFF_CI_API_KEY }}
           sitemap_url: https://example.com/sitemap.xml
           fail_mode: error
           comment_on_pr: ${{ github.event_name == 'pull_request' }}
@@ -84,9 +84,9 @@ Note: no `actions/checkout` step is needed — this action is referenced by name
 
 Go to **Settings → Secrets and variables → Actions** and add:
 
-- `SEOCHECKER_API_BASE_URL` — your SeoChecker API host URL
-- `SEOCHECKER_CI_API_KEY` — a CI API key from your SeoChecker instance
+- `SIGNALDIFF_API_BASE_URL` — your SeoChecker API host URL
+- `SIGNALDIFF_CI_API_KEY` — a CI API key from your SeoChecker instance
 
 ### 2. Backend configuration
 
-Your SeoChecker API must have `Trigger:CiApiKey` set to the same value as the `SEOCHECKER_CI_API_KEY` secret, or the key must exist in the Cosmos DB CI key store.
+Your Signal Diff API must have `Trigger:CiApiKey` set to the same value as the `SIGNALDIFF_CI_API_KEY` secret, or the key must exist in the Cosmos DB CI key store.
