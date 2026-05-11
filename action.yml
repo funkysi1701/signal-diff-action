@@ -1,12 +1,12 @@
-name: "SeoChecker Crawl"
-description: "Trigger a SeoChecker CI crawl, wait for completion, and optionally fail by policy."
+name: "Signal Diff Crawl"
+description: "Trigger a Signal Diff crawl, wait for completion, and optionally fail by policy."
 
 inputs:
   api_base_url:
-    description: "Base URL of the SeoChecker API host."
+    description: "Base URL of the Signal Diff API host."
     required: true
   api_key:
-    description: "SeoChecker CI API key."
+    description: "Signal Diff CI API key."
     required: true
   sitemap_url:
     description: "Sitemap URL to crawl."
@@ -50,7 +50,7 @@ inputs:
 
 outputs:
   job_id:
-    description: "SeoChecker job ID."
+    description: "Signal Diff job ID."
     value: ${{ steps.start.outputs.job_id }}
   trigger_url:
     description: "Resolved trigger endpoint URL used to start the crawl."
@@ -93,7 +93,7 @@ runs:
         fi
         if [[ "${#API_KEY}" -gt 200 ]]; then
           echo "api_key looks too long (${#API_KEY} chars)."
-          echo "Use a SeoChecker CI API key, not a JWT/OIDC token."
+          echo "Use a Signal Diff CI API key, not a JWT/OIDC token."
           exit 1
         fi
         if [[ -z "${SITEMAP_URL}" ]]; then
@@ -306,7 +306,7 @@ runs:
             echo "warnings=${warnings}" >> "$GITHUB_OUTPUT"
             echo "pages=${pages}" >> "$GITHUB_OUTPUT"
             {
-              echo "### SEO Crawl Result"
+              echo "### Signal Diff Crawl Result"
               echo ""
               echo "- Status: \`${status}\`"
               echo "- Pages: \`${pages}\`"
@@ -335,7 +335,7 @@ runs:
           const pages = Number('${{ steps.poll.outputs.pages }}');
           const jobId = '${{ steps.start.outputs.job_id }}';
           const body = [
-            '### SEO Crawl Result',
+            '### Signal Diff Crawl Result',
             '',
             `- Status: \`${status}\``,
             `- Pages: \`${pages}\``,
@@ -343,7 +343,7 @@ runs:
             `- Warnings: \`${warnings}\``,
             `- Job ID: \`${jobId}\``,
             '',
-            'Review full details in the SeoChecker job history UI.'
+            'Review full details in the Signal Diff job history UI.'
           ].join('\n');
           await github.rest.issues.createComment({
             owner: context.repo.owner,
