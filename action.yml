@@ -1,4 +1,7 @@
 name: "Signal Diff Crawl"
+branding:
+  icon: 'activity'
+  color: 'blue'
 description: "Trigger a Signal Diff crawl, wait for completion, and optionally fail by policy."
 
 inputs:
