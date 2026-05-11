@@ -86,7 +86,3 @@ Go to **Settings → Secrets and variables → Actions** and add:
 
 - `SIGNALDIFF_API_BASE_URL` — your SeoChecker API host URL
 - `SIGNALDIFF_CI_API_KEY` — a CI API key from your SeoChecker instance
-
-### 2. Backend configuration
-
-Your Signal Diff API must have `Trigger:CiApiKey` set to the same value as the `SIGNALDIFF_CI_API_KEY` secret, or the key must exist in the Cosmos DB CI key store.
