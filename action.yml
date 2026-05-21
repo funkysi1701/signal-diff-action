@@ -23,7 +23,19 @@ inputs:
     required: false
     default: "false"
   github_token:
-    description: "GitHub token for PR comments (required when comment_on_pr=true)."
+    description: "GitHub token for PR comments and code-change collection (contents: read)."
+    required: false
+    default: ${{ github.token }}
+  collect_code_changes:
+    description: "After crawl completes, summarize git changes and PATCH to Signal Diff."
+    required: false
+    default: "true"
+  max_changed_files:
+    description: "Maximum changed file paths to include in the CI code change summary."
+    required: false
+    default: "50"
+  baseline_ref:
+    description: "Optional baseline commit SHA for push/workflow_dispatch (overrides last-run API)."
     required: false
     default: ""
   repository:
@@ -73,6 +85,9 @@ outputs:
   pages:
     description: "Final crawled page count."
     value: ${{ steps.poll.outputs.pages }}
+  code_changes_collected:
+    description: "Whether a CI code change summary was attached to the job."
+    value: ${{ steps.collect_code_changes.outputs.collected }}
 
 runs:
   using: "composite"
@@ -325,6 +340,31 @@ runs:
           fi
           sleep 5
         done
+
+    - name: Collect git code change summary
+      id: collect_code_changes
+      if: ${{ inputs.collect_code_changes == 'true' }}
+      shell: bash
+      env:
+        COLLECT_CODE_CHANGES: ${{ inputs.collect_code_changes }}
+        JOB_ID: ${{ steps.start.outputs.job_id }}
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        API_KEY: ${{ inputs.api_key }}
+        SITEMAP_URL: ${{ inputs.sitemap_url }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        REPOSITORY: ${{ inputs.repository }}
+        BASELINE_REF: ${{ inputs.baseline_ref }}
+        MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        POLL_STATUS: ${{ steps.poll.outputs.status }}
+        FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      run: |
+        set -uo pipefail
+        echo "collected=false" >> "$GITHUB_OUTPUT"
+        python3 "${{ github.action_path }}/scripts/collect_ci_code_changes.py" || true
 
     - name: Comment findings on PR
       if: ${{ inputs.comment_on_pr == 'true' && github.event_name == 'pull_request' }}

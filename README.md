@@ -21,7 +21,10 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `sitemap_url` | yes | | Sitemap URL to crawl |
 | `fail_mode` | no | `error` | Failure policy: `none`, `error`, or `errorOrWarning` |
 | `comment_on_pr` | no | `false` | Post a crawl summary comment on PRs |
-| `github_token` | no | | GitHub token for PR comments (required when `comment_on_pr=true`) |
+| `github_token` | no | `${{ github.token }}` | GitHub token for PR comments and code-change collection |
+| `collect_code_changes` | no | `true` | After crawl completes, summarize git changes and attach to the job |
+| `max_changed_files` | no | `50` | Max changed file paths in the summary |
+| `baseline_ref` | no | | Baseline commit for push/dispatch (overrides `GET /api/ci/last-run`) |
 | `repository` | no | `${{ github.repository }}` | Repository slug (owner/repo) |
 | `ref_name` | no | `${{ github.ref }}` | Git ref for this run |
 | `commit_sha` | no | `${{ github.sha }}` | Commit SHA for this run |
@@ -40,6 +43,32 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `errors` | Final crawl error count |
 | `warnings` | Final crawl warning count |
 | `pages` | Final crawled page count |
+| `code_changes_collected` | `true` when a git change summary was PATCHed to the job |
+
+## Permissions
+
+Workflows need at least:
+
+```yaml
+permissions:
+  contents: read
+```
+
+Add `pull-requests: write` when `comment_on_pr: true`.
+
+Code change collection uses the [GitHub Compare API](https://docs.github.com/en/rest/commits/commits#compare-two-commits) with `github_token` (default `${{ github.token }}`). **Fork pull requests** and missing `contents: read` skip the summary with a log line; the crawl still completes.
+
+## Code change summary
+
+When `collect_code_changes` is `true` (default), after the crawl reaches a terminal state the action:
+
+1. Resolves a **baseline** commit:
+   - **pull_request:** `github.event.pull_request.base.sha`
+   - **push / workflow_dispatch:** `GET {api_base_url}/api/ci/last-run?repository=...&sitemapUrl=...`, or `baseline_ref` when set
+2. Calls GitHub Compare (`base...head`) and caps paths/commits.
+3. `PATCH {api_base_url}/api/jobs/{jobId}/ci-changes` with the same CI API key as the crawl trigger.
+
+Failures in this step are **non-fatal** (logged only).
 
 ## Fail modes
 
@@ -66,14 +95,15 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: funkysi1701/signal-diff-actio@v1
+      - uses: funkysi1701/signal-diff-action@v1
         with:
           api_base_url: ${{ secrets.SIGNALDIFF_API_BASE_URL }}
           api_key: ${{ secrets.SIGNALDIFF_CI_API_KEY }}
           sitemap_url: https://example.com/sitemap.xml
           fail_mode: error
           comment_on_pr: ${{ github.event_name == 'pull_request' }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          collect_code_changes: true
+          github_token: ${{ github.token }}
 ```
 
 Note: no `actions/checkout` step is needed — this action is referenced by name, not local path.
