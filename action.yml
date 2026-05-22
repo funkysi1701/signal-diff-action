@@ -34,6 +34,10 @@ inputs:
     description: "Maximum changed file paths to include in the CI code change summary."
     required: false
     default: "50"
+  max_new_findings_in_comment:
+    description: "Maximum new run-diff findings listed in the PR comment."
+    required: false
+    default: "5"
   baseline_ref:
     description: "Optional baseline commit SHA for push/workflow_dispatch (overrides last-run API)."
     required: false
@@ -366,28 +370,49 @@ runs:
         echo "collected=false" >> "$GITHUB_OUTPUT"
         python3 "${{ github.action_path }}/scripts/collect_ci_code_changes.py" || true
 
+    - name: Build PR comment body
+      id: pr_comment
+      if: ${{ inputs.comment_on_pr == 'true' && github.event_name == 'pull_request' }}
+      continue-on-error: true
+      shell: bash
+      env:
+        STATUS_URL: ${{ steps.start.outputs.status_url }}
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        API_KEY: ${{ inputs.api_key }}
+        JOB_ID: ${{ steps.start.outputs.job_id }}
+        POLL_STATUS: ${{ steps.poll.outputs.status }}
+        POLL_ERRORS: ${{ steps.poll.outputs.errors }}
+        POLL_WARNINGS: ${{ steps.poll.outputs.warnings }}
+        POLL_PAGES: ${{ steps.poll.outputs.pages }}
+        WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
+        FAIL_MODE: ${{ inputs.fail_mode }}
+        MAX_NEW_FINDINGS_IN_COMMENT: ${{ inputs.max_new_findings_in_comment }}
+      run: |
+        set -uo pipefail
+        python3 "${{ github.action_path }}/scripts/build_pr_comment.py" || true
+        if [[ ! -f /tmp/signaldiff-pr-comment.md ]]; then
+          {
+            echo "### Signal Diff Crawl Result"
+            echo ""
+            echo "- Status: \`${POLL_STATUS}\`"
+            echo "- Pages: \`${POLL_PAGES}\`"
+            echo "- Errors: \`${POLL_ERRORS}\`"
+            echo "- Warnings: \`${POLL_WARNINGS}\`"
+            echo "- Job ID: \`${JOB_ID}\`"
+            echo ""
+            echo "Review full details in the Signal Diff job history UI."
+          } > /tmp/signaldiff-pr-comment.md
+        fi
+
     - name: Comment findings on PR
       if: ${{ inputs.comment_on_pr == 'true' && github.event_name == 'pull_request' }}
+      continue-on-error: true
       uses: actions/github-script@v9
       with:
         github-token: ${{ inputs.github_token }}
         script: |
-          const status = '${{ steps.poll.outputs.status }}';
-          const errors = Number('${{ steps.poll.outputs.errors }}');
-          const warnings = Number('${{ steps.poll.outputs.warnings }}');
-          const pages = Number('${{ steps.poll.outputs.pages }}');
-          const jobId = '${{ steps.start.outputs.job_id }}';
-          const body = [
-            '### Signal Diff Crawl Result',
-            '',
-            `- Status: \`${status}\``,
-            `- Pages: \`${pages}\``,
-            `- Errors: \`${errors}\``,
-            `- Warnings: \`${warnings}\``,
-            `- Job ID: \`${jobId}\``,
-            '',
-            'Review full details in the Signal Diff job history UI.'
-          ].join('\n');
+          const fs = require('fs');
+          const body = fs.readFileSync('/tmp/signaldiff-pr-comment.md', 'utf8');
           await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,

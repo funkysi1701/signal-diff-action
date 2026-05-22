@@ -31,6 +31,7 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `workflow_run_id` | no | `${{ github.run_id }}` | GitHub workflow run ID |
 | `workflow_run_url` | no | auto | GitHub workflow run URL |
 | `pull_request_number` | no | auto | PR number associated with this run |
+| `max_new_findings_in_comment` | no | `5` | Max new run-diff findings listed in the PR comment |
 
 ## Outputs
 
@@ -79,6 +80,15 @@ Failures in this step are **non-fatal** (logged only).
 | `errorOrWarning` | Fails if any errors or warnings are found |
 
 The workflow always fails if the crawl itself fails to complete.
+
+## PR comments
+
+When `comment_on_pr` is `true` on `pull_request` events, the action fetches the completed job (`GET` status URL), then posts a **best-effort** comment (`continue-on-error: true`). The comment includes crawl counts, a link to `/scan/{jobId}`, the workflow run link, and when available:
+
+- **Run diff** headline and a capped list of new findings (`runDiff.newFindings`)
+- **Code changes** compare link and changed-file count (`ciCodeChanges`)
+
+Comment posting never fails the workflow.
 
 ## Full example
 
