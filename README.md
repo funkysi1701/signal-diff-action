@@ -122,6 +122,7 @@ Note: no `actions/checkout` step is needed — this action is referenced by name
 
 | Tag | Notes |
 | --- | --- |
+| `v1.4` | Passes `excludeJobId` to `GET /api/ci/last-run` so the crawl that just finished is not used as its own baseline. Requires API support for `excludeJobId` (deploy latest Signal Diff API). |
 | `v1.3` | Python HTTP scripts send `User-Agent: signal-diff-action/1.3` so edge WAFs (e.g. Cloudflare) do not block `GET /api/ci/last-run` and job fetches that used the default `Python-urllib` signature. |
 | `v1.2` | CI code change collection and enriched PR comments. |
 

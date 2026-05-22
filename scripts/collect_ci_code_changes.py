@@ -61,6 +61,7 @@ def _resolve_baseline(
     api_key: str,
     repository: str,
     sitemap_url: str,
+    exclude_job_id: str,
 ) -> str | None:
     if pr_base_sha:
         print(f"Using PR base commit as baseline: {pr_base_sha[:12]}...")
@@ -74,7 +75,10 @@ def _resolve_baseline(
         print(f"Event '{event_name}' has no baseline_ref; skipping last-run lookup.")
         return None
 
-    query = urllib.parse.urlencode({"repository": repository, "sitemapUrl": sitemap_url})
+    params: dict[str, str] = {"repository": repository, "sitemapUrl": sitemap_url}
+    if exclude_job_id:
+        params["excludeJobId"] = exclude_job_id
+    query = urllib.parse.urlencode(params)
     url = f"{api_base}/api/ci/last-run?{query}"
     print(f"Querying last completed CI run: {url}")
     code, payload, _ = _http_json(
@@ -216,6 +220,7 @@ def main() -> int:
         api_key=api_key,
         repository=repository,
         sitemap_url=sitemap_url,
+        exclude_job_id=job_id,
     )
     if not baseline:
         print("No baseline commit resolved; skipping code change summary.")
