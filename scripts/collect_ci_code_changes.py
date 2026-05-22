@@ -10,6 +10,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from http_common import merge_headers
 
 
 def _env(name: str, default: str = "") -> str:
@@ -25,7 +29,7 @@ def _http_json(
     timeout: int = 60,
 ) -> tuple[int, dict | list | None, str]:
     data = None
-    req_headers = dict(headers or {})
+    req_headers = merge_headers(headers)
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         req_headers.setdefault("Content-Type", "application/json")
@@ -115,7 +119,6 @@ def _github_compare(
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "signal-diff-action",
         },
     )
     if code in (403, 404):

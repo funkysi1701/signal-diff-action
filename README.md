@@ -118,6 +118,13 @@ jobs:
 
 Note: no `actions/checkout` step is needed — this action is referenced by name, not local path.
 
+## Releases
+
+| Tag | Notes |
+| --- | --- |
+| `v1.3` | Python HTTP scripts send `User-Agent: signal-diff-action/1.3` so edge WAFs (e.g. Cloudflare) do not block `GET /api/ci/last-run` and job fetches that used the default `Python-urllib` signature. |
+| `v1.2` | CI code change collection and enriched PR comments. |
+
 ## Setup
 
 ### 1. Add secrets to your repository

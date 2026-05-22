@@ -8,7 +8,11 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from http_common import merge_headers
 
 
 def _env(name: str, default: str = "") -> str:
@@ -44,10 +48,10 @@ def _fetch_job(status_url: str, api_key: str, api_base_url: str, job_id: str) ->
     resolved = _resolve_status_url(status_url, api_base_url, job_id)
     req = urllib.request.Request(
         resolved,
-        headers={
+        headers=merge_headers({
             "Authorization": f"Bearer {api_key}",
             "x-ci-api-key": api_key,
-        },
+        }),
         method="GET",
     )
     try:
