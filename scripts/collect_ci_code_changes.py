@@ -106,6 +106,13 @@ def _resolve_baseline(
     return commit_sha
 
 
+def _compare_url(repository: str, baseline: str, head: str, *, two_dot: bool) -> str:
+    repo = urllib.parse.quote(repository, safe="/")
+    sep = ".." if two_dot else "..."
+    # SHAs are hex; keep the compare separator literal (do not percent-encode dots).
+    return f"https://api.github.com/repos/{repo}/compare/{baseline}{sep}{head}"
+
+
 def _github_compare(
     *,
     token: str,
@@ -113,24 +120,32 @@ def _github_compare(
     baseline: str,
     head: str,
 ) -> tuple[dict | None, str | None]:
-    base = urllib.parse.quote(repository, safe="")
-    compare_path = urllib.parse.quote(f"{baseline}...{head}", safe="")
-    url = f"https://api.github.com/repos/{base}/compare/{compare_path}"
-    code, payload, raw = _http_json(
-        "GET",
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    if code in (403, 404):
-        return None, f"GitHub compare API returned HTTP {code} (permissions or inaccessible range)."
-    if code != 200 or not isinstance(payload, dict):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    errors: list[str] = []
+    for label, two_dot in (("three-dot", False), ("two-dot", True)):
+        url = _compare_url(repository, baseline, head, two_dot=two_dot)
+        code, payload, raw = _http_json("GET", url, headers=headers)
+        if code == 200 and isinstance(payload, dict):
+            if two_dot:
+                print(f"GitHub compare succeeded using {label} range.")
+            return payload, None
+        if code in (403, 404):
+            errors.append(f"{label} compare HTTP {code} ({url})")
+            if raw:
+                errors.append(raw[:300])
+            continue
         return None, f"GitHub compare API failed with HTTP {code}: {raw[:500]}"
 
-    return payload, None
+    return None, (
+        "GitHub compare API could not diff baseline..head. "
+        "Common causes: workflow re-run on an older commit while last-run baseline is newer, "
+        "force-pushed history, or missing contents: read. "
+        + " | ".join(errors)
+    )
 
 
 def _build_patch(compare: dict, *, baseline: str, head: str, max_files: int) -> dict:
@@ -236,6 +251,21 @@ def main() -> int:
         baseline=baseline,
         head=head,
     )
+    push_before = _env("GITHUB_EVENT_BEFORE")
+    if compare is None and push_before and push_before not in (baseline, head):
+        print(
+            f"Retrying compare with github.event.before ({push_before[:12]}...) "
+            f"instead of last-run baseline ({baseline[:12]}...)."
+        )
+        compare, compare_error = _github_compare(
+            token=github_token,
+            repository=repository,
+            baseline=push_before,
+            head=head,
+        )
+        if compare is not None:
+            baseline = push_before
+
     if compare is None:
         print(compare_error or "GitHub compare failed; skipping code change summary.")
         return 0

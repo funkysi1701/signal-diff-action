@@ -361,6 +361,7 @@ runs:
         MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_EVENT_BEFORE: ${{ github.event.before || '' }}
         GITHUB_SERVER_URL: ${{ github.server_url }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
         POLL_STATUS: ${{ steps.poll.outputs.status }}
