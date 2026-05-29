@@ -20,6 +20,8 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `api_key` | yes | | Signal Diff CI API key |
 | `sitemap_url` | yes | | Sitemap URL to crawl |
 | `fail_mode` | no | `error` | Failure policy: `none`, `error`, or `errorOrWarning` |
+| `execution_mode` | no | `cloud` | Crawl route: `cloud` (hosted) or `agent` (customer agent pool) |
+| `agent_pool_id` | no | | Agent pool when `execution_mode` is `agent` (omit for default pool) |
 | `comment_on_pr` | no | `false` | Post a crawl summary comment on PRs |
 | `github_token` | no | `${{ github.token }}` | GitHub token for PR comments and code-change collection |
 | `collect_code_changes` | no | `true` | After crawl completes, summarize git changes and attach to the job |
@@ -81,6 +83,28 @@ Failures in this step are **non-fatal** (logged only).
 
 The workflow always fails if the crawl itself fails to complete.
 
+## Customer agent routing
+
+Set `execution_mode: agent` to queue the crawl for a **customer agent** instead of Signal Diff cloud execution. The action sends `executionMode` and optional `agentPoolId` on `POST {api_base_url}/api/trigger/ci` (same fields as the API’s CI trigger body).
+
+Requirements:
+
+1. **API:** Agent routing enabled (`Features:EnableAgentRouting=true` on the Signal Diff API).
+2. **Agent:** An enrolled agent process running with `AgentPoolId` matching `agent_pool_id` (empty string matches the default pool).
+3. **Tenant:** The CI API key’s user must own the job; agents only claim jobs for their tenant.
+
+Agent jobs stay `pending` until an agent claims them, then move to `running` and finally `complete` or `failed`. The action polls for up to **30 minutes**; keep an agent online for CI or the workflow may time out.
+
+```yaml
+- uses: funkysi1701/signal-diff-action@v1.6
+  with:
+    api_base_url: ${{ secrets.SIGNALDIFF_API_BASE_URL }}
+    api_key: ${{ secrets.SIGNALDIFF_CI_API_KEY }}
+    sitemap_url: https://example.com/sitemap.xml
+    execution_mode: agent
+    agent_pool_id: production
+```
+
 ## PR comments
 
 When `comment_on_pr` is `true` on `pull_request` events, the action fetches the completed job (`GET` status URL), then posts a **best-effort** comment (`continue-on-error: true`). The comment includes crawl counts, a link to `/scan/{jobId}`, the workflow run link, and when available:
@@ -105,12 +129,14 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: funkysi1701/signal-diff-action@v1
+      - uses: funkysi1701/signal-diff-action@v1.6
         with:
           api_base_url: ${{ secrets.SIGNALDIFF_API_BASE_URL }}
           api_key: ${{ secrets.SIGNALDIFF_CI_API_KEY }}
           sitemap_url: https://example.com/sitemap.xml
           fail_mode: error
+          # execution_mode: agent
+          # agent_pool_id: production
           comment_on_pr: ${{ github.event_name == 'pull_request' }}
           collect_code_changes: true
           github_token: ${{ github.token }}
@@ -122,6 +148,7 @@ Note: no `actions/checkout` step is needed — this action is referenced by name
 
 | Tag | Notes |
 | --- | --- |
+| `v1.6` | `execution_mode` and `agent_pool_id` inputs route CI crawls to customer agent pools (`executionMode` / `agentPoolId` on `POST /api/trigger/ci`). Requires Signal Diff API with agent routing enabled. |
 | `v1.5` | GitHub Compare: literal `...` / `..` separators, two-dot fallback, and `github.event.before` retry when last-run baseline is not comparable (e.g. workflow re-run). |
 | `v1.4` | Passes `excludeJobId` to `GET /api/ci/last-run` so the crawl that just finished is not used as its own baseline. Requires API support for `excludeJobId` (deploy latest Signal Diff API). |
 | `v1.3` | Python HTTP scripts send `User-Agent: signal-diff-action/1.3` so edge WAFs (e.g. Cloudflare) do not block `GET /api/ci/last-run` and job fetches that used the default `Python-urllib` signature. |

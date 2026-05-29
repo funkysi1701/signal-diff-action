@@ -18,6 +18,14 @@ inputs:
     description: "Failure policy: none, error, or errorOrWarning."
     required: false
     default: "error"
+  execution_mode:
+    description: "Crawl execution route: cloud (Signal Diff hosted) or agent (customer agent pool)."
+    required: false
+    default: "cloud"
+  agent_pool_id:
+    description: "Agent pool id when execution_mode is agent (must match enrolled agent; omit for default pool)."
+    required: false
+    default: ""
   comment_on_pr:
     description: "Post a crawl summary comment on PRs."
     required: false
@@ -102,9 +110,11 @@ runs:
         API_BASE_URL: ${{ inputs.api_base_url }}
         API_KEY: ${{ inputs.api_key }}
         SITEMAP_URL: ${{ inputs.sitemap_url }}
+        EXECUTION_MODE: ${{ inputs.execution_mode }}
       run: |
         set -euo pipefail
         API_KEY="$(echo "${API_KEY}" | tr -d '\r\n' | xargs)"
+        EXECUTION_MODE="$(echo "${EXECUTION_MODE}" | tr -d '\r\n' | xargs | tr '[:upper:]' '[:lower:]')"
         if [[ -z "${API_BASE_URL}" ]]; then
           echo "api_base_url input is required."
           exit 1
@@ -122,6 +132,10 @@ runs:
           echo "sitemap_url input is required."
           exit 1
         fi
+        if [[ "${EXECUTION_MODE}" != "cloud" && "${EXECUTION_MODE}" != "agent" ]]; then
+          echo "execution_mode must be 'cloud' or 'agent' (got '${EXECUTION_MODE}')."
+          exit 1
+        fi
 
     - name: Start CI crawl run
       id: start
@@ -137,14 +151,20 @@ runs:
         RUN_ID: ${{ inputs.workflow_run_id }}
         RUN_URL: ${{ inputs.workflow_run_url }}
         PR_NUMBER: ${{ inputs.pull_request_number }}
+        EXECUTION_MODE: ${{ inputs.execution_mode }}
+        AGENT_POOL_ID: ${{ inputs.agent_pool_id }}
       run: |
         set -euo pipefail
         API_BASE_URL="$(echo "${API_BASE_URL}" | tr -d '\r\n' | xargs)"
         API_KEY="$(echo "${API_KEY}" | tr -d '\r\n' | xargs)"
+        EXECUTION_MODE="$(echo "${EXECUTION_MODE}" | tr -d '\r\n' | xargs | tr '[:upper:]' '[:lower:]')"
+        AGENT_POOL_ID="$(echo "${AGENT_POOL_ID}" | tr -d '\r\n' | xargs)"
         payload="$(python - <<'PY'
         import json
         import os
         pr_num = os.environ.get("PR_NUMBER", "").strip()
+        execution_mode = os.environ.get("EXECUTION_MODE", "cloud").strip().lower()
+        agent_pool_id = os.environ.get("AGENT_POOL_ID", "").strip()
         data = {
             "sitemapUrl": os.environ["SITEMAP_URL"],
             "failMode": os.environ["FAIL_MODE"],
@@ -154,11 +174,22 @@ runs:
             "workflowRunId": os.environ["RUN_ID"],
             "workflowRunUrl": os.environ["RUN_URL"],
         }
+        if execution_mode == "agent":
+            data["executionMode"] = "agent"
+            if agent_pool_id:
+                data["agentPoolId"] = agent_pool_id
         if pr_num:
             data["pullRequestNumber"] = int(pr_num)
         print(json.dumps(data))
         PY
         )"
+        if [[ "${EXECUTION_MODE}" == "agent" ]]; then
+          if [[ -n "${AGENT_POOL_ID}" ]]; then
+            echo "Routing crawl to customer agent pool '${AGENT_POOL_ID}'."
+          else
+            echo "Routing crawl to the default customer agent pool."
+          fi
+        fi
 
         call_trigger() {
           local url="$1"
