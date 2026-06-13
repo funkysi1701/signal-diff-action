@@ -107,6 +107,24 @@ def _finding_counts(job: dict[str, Any] | None) -> tuple[int, int, int, int]:
     return total, errors, warnings, _int_field(job, "infoCount", "InfoCount")
 
 
+def _has_embedded_baseline_counts(run_diff: dict[str, Any] | None) -> bool:
+    if not run_diff:
+        return False
+    return (
+        _field(run_diff, "baselineErrorCount", "BaselineErrorCount") is not None
+        or _field(run_diff, "baselineWarningCount", "BaselineWarningCount") is not None
+    )
+
+
+def _embedded_baseline_counts(run_diff: dict[str, Any] | None) -> tuple[int, int, int] | None:
+    if not _has_embedded_baseline_counts(run_diff):
+        return None
+    errors = _int_field(run_diff, "baselineErrorCount", "BaselineErrorCount")
+    warnings = _int_field(run_diff, "baselineWarningCount", "BaselineWarningCount")
+    total = _int_field(run_diff, "baselineFindingCount", "BaselineFindingCount", default=errors + warnings)
+    return total, errors, warnings
+
+
 def _fail_policy_would_fail(fail_mode: str, errors: int, warnings: int) -> bool:
     mode = (fail_mode or "error").strip().lower()
     if mode == "none":
@@ -224,6 +242,9 @@ def _format_baseline_comparison(
 
     if baseline_job:
         prev_total, prev_errors, prev_warnings, _ = _finding_counts(baseline_job)
+        lines.append(f"Previous scan: {prev_total} findings ({prev_errors} errors, {prev_warnings} warnings)")
+    elif (embedded := _embedded_baseline_counts(run_diff)) is not None:
+        prev_total, prev_errors, prev_warnings = embedded
         lines.append(f"Previous scan: {prev_total} findings ({prev_errors} errors, {prev_warnings} warnings)")
     elif run_diff and _field(run_diff, "baselineJobId", "BaselineJobId"):
         lines.append("Previous scan: _baseline job unavailable_")
@@ -489,7 +510,7 @@ def main() -> int:
         baseline_job_id = ""
         if isinstance(run_diff, dict):
             baseline_job_id = str(_field(run_diff, "baselineJobId", "BaselineJobId", default="")).strip()
-        if baseline_job_id:
+        if baseline_job_id and not _has_embedded_baseline_counts(run_diff if isinstance(run_diff, dict) else None):
             baseline_job = _fetch_baseline_job(api_base_url, baseline_job_id, api_key)
 
     if job is None:

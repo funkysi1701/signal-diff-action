@@ -72,6 +72,54 @@ class BuildPrCommentTests(unittest.TestCase):
         self.assertIn("Current scan:  14 findings (0 errors, 14 warnings)", body)
         self.assertIn("New: +2 · Resolved: −0", body)
 
+    def test_baseline_comparison_uses_embedded_run_diff_counts_without_baseline_job(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("Previous scan: 12 findings (0 errors, 12 warnings)", body)
+        self.assertNotIn("baseline job unavailable", body)
+
+    def test_baseline_comparison_shows_unavailable_when_counts_missing(self) -> None:
+        job = _load("job_with_run_diff.json")
+        run_diff = dict(job["runDiff"])
+        for key in (
+            "baselineErrorCount",
+            "baselineWarningCount",
+            "baselineInfoCount",
+            "baselineFindingCount",
+        ):
+            run_diff.pop(key, None)
+        job = dict(job)
+        job["runDiff"] = run_diff
+
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("Previous scan: _baseline job unavailable_", body)
+
     def test_impact_summary_surfaced_when_present(self) -> None:
         job = _load("job_with_run_diff.json")
         body = build_comment(

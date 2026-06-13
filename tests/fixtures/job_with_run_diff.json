@@ -7,6 +7,10 @@
   "totalPages": 120,
   "runDiff": {
     "baselineJobId": "baseline-job-001",
+    "baselineErrorCount": 0,
+    "baselineWarningCount": 12,
+    "baselineInfoCount": 0,
+    "baselineFindingCount": 12,
     "newFindingCount": 2,
     "resolvedFindingCount": 0,
     "headline": "2 new warnings on shared paths",
