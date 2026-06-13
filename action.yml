@@ -78,6 +78,14 @@ inputs:
     description: "PR number associated with this run."
     required: false
     default: ${{ github.event.pull_request.number || '' }}
+  inline_annotations:
+    description: "Post inline PR comments on high-risk changed files."
+    required: false
+    default: "false"
+  annotation_max_files:
+    description: "Maximum files to annotate inline."
+    required: false
+    default: "3"
 
 outputs:
   job_id:
@@ -445,6 +453,25 @@ runs:
             issue_number: context.issue.number,
             body
           });
+
+    - name: Post inline PR annotations
+      if: ${{ inputs.inline_annotations == 'true' && github.event_name == 'pull_request' }}
+      continue-on-error: true
+      shell: bash
+      env:
+        INLINE_ANNOTATIONS: ${{ inputs.inline_annotations }}
+        ANNOTATION_MAX_FILES: ${{ inputs.annotation_max_files }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        REPOSITORY: ${{ inputs.repository }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        JOB_ID: ${{ steps.start.outputs.job_id }}
+        FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      run: |
+        set -uo pipefail
+        python3 "${{ github.action_path }}/scripts/post_inline_annotations.py" || true
 
     - name: Apply fail policy
       shell: bash

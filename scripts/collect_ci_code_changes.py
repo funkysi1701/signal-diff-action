@@ -164,6 +164,57 @@ def _sum_line_stats(files: list) -> tuple[int, int]:
     return added, removed
 
 
+DEFAULT_COMPARE_FILES_PATH = "/tmp/signaldiff-compare-files.json"
+
+
+def _write_compare_files_for_annotations(
+    compare: dict,
+    *,
+    baseline: str,
+    head: str,
+) -> None:
+    """Persist compare file patches for optional inline PR annotations."""
+    output_path = _env("COMPARE_FILES_PATH", DEFAULT_COMPARE_FILES_PATH)
+    files = compare.get("files") or []
+    paths = [f.get("filename") for f in files if isinstance(f, dict) and f.get("filename")]
+    paths = [p for p in paths if isinstance(p, str)]
+
+    slim_files: list[dict] = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        filename = entry.get("filename")
+        if not isinstance(filename, str) or not filename:
+            continue
+        slim: dict = {"filename": filename}
+        patch = entry.get("patch")
+        if isinstance(patch, str) and patch.strip():
+            slim["patch"] = patch
+        status = entry.get("status")
+        if isinstance(status, str):
+            slim["status"] = status
+        additions = entry.get("additions")
+        deletions = entry.get("deletions")
+        if isinstance(additions, int):
+            slim["additions"] = additions
+        if isinstance(deletions, int):
+            slim["deletions"] = deletions
+        slim_files.append(slim)
+
+    payload = {
+        "baselineCommitSha": baseline,
+        "headCommitSha": head,
+        "changedPaths": paths,
+        "categoryCounts": categorize_changed_paths(paths),
+        "files": slim_files,
+    }
+    try:
+        Path(output_path).write_text(json.dumps(payload), encoding="utf-8")
+        print(f"Wrote compare file patches for inline annotations to {output_path}.")
+    except OSError as ex:
+        print(f"Could not write compare file data to {output_path}: {ex}")
+
+
 def _build_patch(compare: dict, *, baseline: str, head: str, max_files: int) -> dict:
     files = compare.get("files") or []
     commits = compare.get("commits") or []
@@ -294,7 +345,9 @@ def main() -> int:
         print(compare_error or "GitHub compare failed; skipping code change summary.")
         return 0
 
-    patch = _build_patch(compare, baseline=baseline, head=head, max_files=max(1, max_files))
+    capped_max = max(1, max_files)
+    _write_compare_files_for_annotations(compare, baseline=baseline, head=head)
+    patch = _build_patch(compare, baseline=baseline, head=head, max_files=capped_max)
     patch_url = f"{api_base}/api/jobs/{urllib.parse.quote(job_id, safe='')}/ci-changes"
     print(f"PATCH {patch_url}")
 

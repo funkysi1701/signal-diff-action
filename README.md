@@ -35,6 +35,8 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `pull_request_number` | no | auto | PR number associated with this run |
 | `max_new_findings_in_comment` | no | `5` | Max new run-diff findings listed in the PR comment |
 | `risk_score_enabled` | no | `true` | Include rule-based risk score in the PR comment summary |
+| `inline_annotations` | no | `false` | Post inline PR review comments on high-risk changed files |
+| `annotation_max_files` | no | `3` | Maximum files to annotate inline when `inline_annotations` is enabled |
 
 ## Outputs
 
@@ -58,9 +60,9 @@ permissions:
   contents: read
 ```
 
-Add `pull-requests: write` when `comment_on_pr: true`.
+Add `pull-requests: write` when `comment_on_pr: true` or `inline_annotations: true`.
 
-Code change collection uses the [GitHub Compare API](https://docs.github.com/en/rest/commits/commits#compare-two-commits) with `github_token` (default `${{ github.token }}`). **Fork pull requests** and missing `contents: read` skip the summary with a log line; the crawl still completes.
+Code change collection uses the [GitHub Compare API](https://docs.github.com/en/rest/commits/commits#compare-two-commits) with `github_token` (default `${{ github.token }}`). **Fork pull requests** and missing `contents: read` skip the summary with a log line; the crawl still completes. Inline annotations use the same fork skip and require `pull-requests: write`.
 
 ## Code change summary
 
@@ -128,6 +130,38 @@ When `risk_score_enabled` is `true` (default), the summary table includes a **ru
 
 Scores are normalized to **0–10** with labels **Low** (🟢), **Medium** (🟡), and **High** (🔴). Docs-only or test-only PRs score lower than changes touching production code or config. Set `risk_score_enabled: false` to omit the row; the score never fails the workflow (use `fail_mode` for that).
 
+### Inline PR annotations
+
+When `inline_annotations: true` on `pull_request` events (default **off**), the action posts up to `annotation_max_files` (default **3**) **inline review comments** on the exact changed line for qualifying files:
+
+- **High-risk paths** from the same rules as **Files requiring review** (auth, payment, migrations, production config, etc.)
+- **Config file changes** (`appsettings*`, `.github/`, `docker-compose*`, etc.) when inline budget remains
+
+Each comment includes a hidden idempotency marker (`<!-- signaldiff-annotation:{path} -->`). Re-running the workflow **updates** the existing bot comment for that file instead of spamming duplicates.
+
+Requirements:
+
+- `collect_code_changes: true` (default) so GitHub Compare patches are available
+- `pull-requests: write` on the workflow job
+- Same-repo PRs only (fork PRs are skipped, same as code change collection)
+- SEO URL findings are **not** mapped to repository lines — use the summary comment and scan link instead
+
+Annotation errors are **non-fatal** (`continue-on-error: true`).
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+- uses: funkysi1701/signal-diff-action@v1.9
+  with:
+    comment_on_pr: true
+    inline_annotations: true
+    annotation_max_files: 3
+    collect_code_changes: true
+    github_token: ${{ github.token }}
+```
+
 ## Full example
 
 ```yaml
@@ -162,6 +196,7 @@ Note: no `actions/checkout` step is needed — this action is referenced by name
 
 | Tag | Notes |
 | --- | --- |
+| `v1.9` | Inline PR review comments on high-risk and config file changes (`inline_annotations`, default off; `annotation_max_files`, default 3). Idempotent markers update existing bot comments on re-run. Requires `pull-requests: write` and `collect_code_changes`. |
 | `v1.8` | Rule-based PR risk score in the summary table (`risk_score_enabled`, default `true`). Combines changed-path signals (auth, payment, migration, production config, etc.) with SEO run-diff and crawl counts. Also adds file change categorization (code/tests/config/…) and GitHub Compare line stats in PR comments and `ci-changes` payloads. |
 | `v1.7` | PR comment redesign: decision-focused **Signal Diff Report** with pass/fail verdict, severity label, summary metrics table, baseline before/after comparison, capped new findings, and separate SEO vs repository-change sections. Same report is appended to the GitHub Actions step summary. |
 | `v1.6` | `execution_mode` and `agent_pool_id` inputs route CI crawls to customer agent pools (`executionMode` / `agentPoolId` on `POST /api/trigger/ci`). Requires Signal Diff API with agent routing enabled. |
