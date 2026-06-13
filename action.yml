@@ -46,6 +46,10 @@ inputs:
     description: "Maximum new run-diff findings listed in the PR comment."
     required: false
     default: "5"
+  risk_score_enabled:
+    description: "Include rule-based risk score in PR comment."
+    required: false
+    default: "true"
   baseline_ref:
     description: "Optional baseline commit SHA for push/workflow_dispatch (overrides last-run API)."
     required: false
@@ -409,6 +413,7 @@ runs:
         WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
         FAIL_MODE: ${{ inputs.fail_mode }}
         MAX_NEW_FINDINGS_IN_COMMENT: ${{ inputs.max_new_findings_in_comment }}
+        RISK_SCORE_ENABLED: ${{ inputs.risk_score_enabled }}
         GITHUB_STEP_SUMMARY: ${{ env.GITHUB_STEP_SUMMARY }}
       run: |
         set -uo pipefail

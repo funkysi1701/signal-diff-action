@@ -34,6 +34,7 @@ Trigger a Signal Diff CI crawl from any GitHub Actions workflow, poll until comp
 | `workflow_run_url` | no | auto | GitHub workflow run URL |
 | `pull_request_number` | no | auto | PR number associated with this run |
 | `max_new_findings_in_comment` | no | `5` | Max new run-diff findings listed in the PR comment |
+| `risk_score_enabled` | no | `true` | Include rule-based risk score in the PR comment summary |
 
 ## Outputs
 
@@ -110,12 +111,21 @@ Agent jobs stay `pending` until an agent claims them, then move to `running` and
 When `comment_on_pr` is `true` on `pull_request` events, the action fetches the completed job (`GET` status URL), then posts a **best-effort** comment (`continue-on-error: true`). The comment is a decision-focused **Signal Diff Report**:
 
 1. **Verdict** — pass/fail for your `fail_mode` plus severity (`Critical` / `Warning` / `Info` / `Improved` / `Compared`)
-2. **Summary table** — SEO errors/warnings, new vs resolved findings, files changed, pages crawled
+2. **Summary table** — rule-based risk score (0–10, Low/Medium/High), SEO errors/warnings, new vs resolved findings, files changed, pages crawled
 3. **SEO findings (vs baseline)** — headline, impact summary, capped new findings, baseline before/after counts
 4. **Repository changes** — GitHub compare link (separate from SEO findings)
 5. **Links** — Signal Diff scan URL and workflow run
 
 The same report is appended to the GitHub Actions step summary. Comment posting never fails the workflow.
+
+### Risk score
+
+When `risk_score_enabled` is `true` (default), the summary table includes a **rule-based PR risk score** (no AI). The score combines:
+
+- **Code-change signals** — keyword weights on changed paths (`auth`, `payment`, `migration`, `appsettings`, etc.) and directory/file pattern boosts (migrations, auth/payment folders, production config).
+- **SEO signals** — new run-diff findings (higher weight for new errors than warnings), current crawl error/warning counts, and whether your `fail_mode` would fail the workflow.
+
+Scores are normalized to **0–10** with labels **Low** (🟢), **Medium** (🟡), and **High** (🔴). Docs-only or test-only PRs score lower than changes touching production code or config. Set `risk_score_enabled: false` to omit the row; the score never fails the workflow (use `fail_mode` for that).
 
 ## Full example
 
@@ -151,6 +161,8 @@ Note: no `actions/checkout` step is needed — this action is referenced by name
 
 | Tag | Notes |
 | --- | --- |
+| `v1.8` | Rule-based PR risk score in the summary table (`risk_score_enabled`, default `true`). Combines changed-path signals (auth, payment, migration, production config, etc.) with SEO run-diff and crawl counts. Also adds file change categorization (code/tests/config/…) and GitHub Compare line stats in PR comments and `ci-changes` payloads. |
+| `v1.7` | PR comment redesign: decision-focused **Signal Diff Report** with pass/fail verdict, severity label, summary metrics table, baseline before/after comparison, capped new findings, and separate SEO vs repository-change sections. Same report is appended to the GitHub Actions step summary. |
 | `v1.6` | `execution_mode` and `agent_pool_id` inputs route CI crawls to customer agent pools (`executionMode` / `agentPoolId` on `POST /api/trigger/ci`). Requires Signal Diff API with agent routing enabled. |
 | `v1.5` | GitHub Compare: literal `...` / `..` separators, two-dot fallback, and `github.event.before` retry when last-run baseline is not comparable (e.g. workflow re-run). |
 | `v1.4` | Passes `excludeJobId` to `GET /api/ci/last-run` so the crawl that just finished is not used as its own baseline. Requires API support for `excludeJobId` (deploy latest Signal Diff API). |

@@ -111,6 +111,27 @@ class BuildPrCommentTests(unittest.TestCase):
         self.assertLess(seo_idx, repo_idx)
         self.assertIn("Repository file changes are separate from SEO crawl findings", body)
 
+    def test_repository_changes_include_line_stats_and_categories(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("| Lines changed (this PR) | +120 / −35 |", body)
+        self.assertIn("| Change categories | Code: 3 · Tests: 1 · Config: 1 |", body)
+        self.assertIn("- Lines: +120 / −35", body)
+        self.assertIn("- Code: 3 · Tests: 1 · Config: 1", body)
+
     def test_critical_severity_for_error_findings(self) -> None:
         job = _load("job_critical.json")
         body = build_comment(
@@ -149,6 +170,61 @@ class BuildPrCommentTests(unittest.TestCase):
     def test_fail_policy_error_or_warning(self) -> None:
         self.assertTrue(_fail_policy_would_fail("errorOrWarning", 0, 2))
         self.assertFalse(_fail_policy_would_fail("none", 3, 3))
+
+    def test_risk_score_appears_in_summary_table_by_default(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertRegex(body, r"\| Risk score \| [🟢🟡🔴] (Low|Medium|High) \(\d+(?:\.\d+)?/10\) \|")
+
+    def test_risk_score_hidden_when_disabled(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+            risk_score_enabled=False,
+        )
+
+        self.assertNotIn("| Risk score |", body)
+
+    def test_critical_job_risk_score_reflects_seo_errors(self) -> None:
+        job = _load("job_critical.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=1,
+            warnings=0,
+            pages=42,
+            job_id="current-job-003",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("| Risk score | 🟡 Medium (4.0/10) |", body)
 
 
 if __name__ == "__main__":

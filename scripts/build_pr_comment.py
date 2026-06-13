@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ci_change_categories import format_category_counts
 from http_common import merge_headers
+from risk_score import compute_risk_score, format_risk_score
 
 REPORT_TITLE = "## Signal Diff Report"
 
@@ -190,6 +192,40 @@ def _format_baseline_comparison(
     return lines
 
 
+def _changed_paths_field(code_changes: dict[str, Any] | None) -> list[str]:
+    if not code_changes:
+        return []
+    raw = _field(code_changes, "changedPaths", "ChangedPaths", default=[])
+    if not isinstance(raw, list):
+        return []
+    return [path for path in raw if isinstance(path, str) and path.strip()]
+
+
+def _category_counts_field(code_changes: dict[str, Any] | None) -> dict[str, int]:
+    if not code_changes:
+        return {}
+    raw = _field(code_changes, "categoryCounts", "CategoryCounts", default={})
+    if not isinstance(raw, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            continue
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            continue
+        if count > 0:
+            counts[key] = count
+    return counts
+
+
+def _format_lines_changed(lines_added: int, lines_removed: int) -> str:
+    if lines_added <= 0 and lines_removed <= 0:
+        return ""
+    return f"+{lines_added} / −{lines_removed}"
+
+
 def build_comment(
     *,
     job: dict[str, Any] | None,
@@ -203,6 +239,7 @@ def build_comment(
     workflow_run_url: str,
     fail_mode: str,
     max_new_findings: int,
+    risk_score_enabled: bool = True,
 ) -> str:
     lines: list[str] = [REPORT_TITLE, ""]
 
@@ -222,9 +259,25 @@ def build_comment(
         "ResolvedFindingCount",
     )
     changed_files = _int_field(code_changes if isinstance(code_changes, dict) else None, "changedFileCount", "ChangedFileCount")
+    lines_added = _int_field(code_changes if isinstance(code_changes, dict) else None, "linesAdded", "LinesAdded")
+    lines_removed = _int_field(code_changes if isinstance(code_changes, dict) else None, "linesRemoved", "LinesRemoved")
+    category_counts = _category_counts_field(code_changes if isinstance(code_changes, dict) else None)
+    changed_paths = _changed_paths_field(code_changes if isinstance(code_changes, dict) else None)
 
     lines.append("| Metric | Value |")
     lines.append("| --- | --- |")
+    if risk_score_enabled:
+        risk = compute_risk_score(
+            changed_paths=changed_paths,
+            category_counts=category_counts,
+            changed_file_count=changed_files,
+            run_diff=run_diff if isinstance(run_diff, dict) else None,
+            errors=errors,
+            warnings=warnings,
+            fail_mode=fail_mode,
+            status=status,
+        )
+        lines.append(f"| Risk score | {format_risk_score(risk['score'])} |")
     lines.append(f"| SEO errors | {errors} |")
     lines.append(f"| SEO warnings | {warnings} |")
     lines.append(f"| New findings (vs baseline) | {_format_delta(new_count)} |")
@@ -232,6 +285,11 @@ def build_comment(
     if changed_files > 0 or (isinstance(code_changes, dict) and _field(code_changes, "compareUrl", "CompareUrl")):
         display_files = changed_files if changed_files > 0 else "—"
         lines.append(f"| Files changed (this PR) | {display_files} |")
+    lines_changed = _format_lines_changed(lines_added, lines_removed)
+    if lines_changed:
+        lines.append(f"| Lines changed (this PR) | {lines_changed} |")
+    if category_counts:
+        lines.append(f"| Change categories | {format_category_counts(category_counts)} |")
     lines.append(f"| Pages crawled | {pages} |")
     lines.append("")
 
@@ -276,7 +334,7 @@ def build_comment(
 
     if isinstance(code_changes, dict):
         compare_url = str(_field(code_changes, "compareUrl", "CompareUrl", default="")).strip()
-        if compare_url or changed_files > 0:
+        if compare_url or changed_files > 0 or lines_changed or category_counts:
             lines.append("### Repository changes")
             lines.append("")
             if compare_url:
@@ -284,6 +342,11 @@ def build_comment(
                 lines.append(f"- [{label}]({compare_url})")
             elif changed_files > 0:
                 lines.append(f"- {changed_files} changed file(s)")
+            if lines_changed:
+                lines.append(f"- Lines: {lines_changed}")
+            category_summary = format_category_counts(category_counts)
+            if category_summary:
+                lines.append(f"- {category_summary}")
             lines.append("")
             lines.append("_Repository file changes are separate from SEO crawl findings._")
             lines.append("")
@@ -314,6 +377,7 @@ def build_fallback_comment(
     api_base_url: str,
     workflow_run_url: str,
     fail_mode: str,
+    risk_score_enabled: bool = True,
 ) -> str:
     return build_comment(
         job=None,
@@ -327,6 +391,7 @@ def build_fallback_comment(
         workflow_run_url=workflow_run_url,
         fail_mode=fail_mode,
         max_new_findings=5,
+        risk_score_enabled=risk_score_enabled,
     )
 
 
@@ -342,6 +407,7 @@ def main() -> int:
     workflow_run_url = _env("WORKFLOW_RUN_URL")
     fail_mode = _env("FAIL_MODE", "error")
     max_new_findings = int(_env("MAX_NEW_FINDINGS_IN_COMMENT", "5") or "5")
+    risk_score_enabled = _env("RISK_SCORE_ENABLED", "true").lower() in ("1", "true", "yes")
 
     job: dict[str, Any] | None = None
     if status_url or (api_base_url and job_id):
@@ -366,6 +432,7 @@ def main() -> int:
             api_base_url=api_base_url,
             workflow_run_url=workflow_run_url,
             fail_mode=fail_mode,
+            risk_score_enabled=risk_score_enabled,
         )
     else:
         body = build_comment(
@@ -380,6 +447,7 @@ def main() -> int:
             workflow_run_url=workflow_run_url,
             fail_mode=fail_mode,
             max_new_findings=max_new_findings,
+            risk_score_enabled=risk_score_enabled,
         )
 
     out_path = _env("COMMENT_BODY_PATH", "/tmp/signaldiff-pr-comment.md")

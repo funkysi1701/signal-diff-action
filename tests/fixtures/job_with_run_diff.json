@@ -28,7 +28,21 @@
   },
   "ciCodeChanges": {
     "compareUrl": "https://github.com/acme/repo/compare/base...head",
-    "changedFileCount": 5
+    "changedFileCount": 5,
+    "linesAdded": 120,
+    "linesRemoved": 35,
+    "categoryCounts": {
+      "code": 3,
+      "tests": 1,
+      "config": 1
+    },
+    "changedPaths": [
+      "src/app/Home.tsx",
+      "src/components/Layout.tsx",
+      "SignalDiff.Api/Services/JobsHttp.cs",
+      "SignalDiff.Tests/Web/JobsHttpTests.cs",
+      "appsettings.Production.json"
+    ]
   },
   "ci": {
     "workflowRunUrl": "https://github.com/acme/repo/actions/runs/99"

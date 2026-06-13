@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ci_change_categories import categorize_changed_paths
 from http_common import merge_headers
 
 
@@ -148,12 +149,29 @@ def _github_compare(
     )
 
 
+def _sum_line_stats(files: list) -> tuple[int, int]:
+    added = 0
+    removed = 0
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        additions = entry.get("additions")
+        deletions = entry.get("deletions")
+        if isinstance(additions, int):
+            added += additions
+        if isinstance(deletions, int):
+            removed += deletions
+    return added, removed
+
+
 def _build_patch(compare: dict, *, baseline: str, head: str, max_files: int) -> dict:
     files = compare.get("files") or []
     commits = compare.get("commits") or []
     paths = [f.get("filename") for f in files if isinstance(f, dict) and f.get("filename")]
     paths = [p for p in paths if isinstance(p, str)]
     capped_paths = paths[:max_files]
+    lines_added, lines_removed = _sum_line_stats(files)
+    category_counts = categorize_changed_paths(paths)
 
     messages: list[str] = []
     for commit in commits[:20]:
@@ -173,7 +191,7 @@ def _build_patch(compare: dict, *, baseline: str, head: str, max_files: int) -> 
         if repo:
             compare_url = f"{server}/{repo}/compare/{baseline}...{head}"
 
-    return {
+    patch = {
         "baselineCommitSha": baseline,
         "headCommitSha": head,
         "compareUrl": compare_url or None,
@@ -183,6 +201,12 @@ def _build_patch(compare: dict, *, baseline: str, head: str, max_files: int) -> 
         "commitMessages": messages,
         "collectedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+    if lines_added > 0 or lines_removed > 0:
+        patch["linesAdded"] = lines_added
+        patch["linesRemoved"] = lines_removed
+    if category_counts:
+        patch["categoryCounts"] = category_counts
+    return patch
 
 
 def main() -> int:
