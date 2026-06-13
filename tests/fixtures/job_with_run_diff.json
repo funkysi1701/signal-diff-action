@@ -11,6 +11,9 @@
     "resolvedFindingCount": 0,
     "headline": "2 new warnings on shared paths",
     "impactSummary": "MetaDescription: Description is too short (2 new occurrence(s)).",
+    "exampleUrl": "https://example.com/page-a",
+    "exampleBeforeTitle": "Old Title",
+    "exampleAfterTitle": "New Title",
     "newFindings": [
       {
         "url": "https://example.com/page-a",

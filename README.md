@@ -112,9 +112,10 @@ When `comment_on_pr` is `true` on `pull_request` events, the action fetches the 
 
 1. **Verdict** — pass/fail for your `fail_mode` plus severity (`Critical` / `Warning` / `Info` / `Improved` / `Compared`)
 2. **Summary table** — rule-based risk score (0–10, Low/Medium/High), SEO errors/warnings, new vs resolved findings, files changed, pages crawled
-3. **SEO findings (vs baseline)** — headline, impact summary, capped new findings, baseline before/after counts
-4. **Repository changes** — GitHub compare link (separate from SEO findings)
-5. **Links** — Signal Diff scan URL and workflow run
+3. **Files requiring review** — top high-attention changed paths with human-readable reasons (auth, payment, migrations, production config, etc.)
+4. **SEO findings (vs baseline)** — headline, impact summary, grouped new findings, optional field-level example, baseline before/after counts
+5. **Repository changes** — GitHub compare link (separate from SEO findings)
+6. **Links** — Signal Diff scan URL and workflow run
 
 The same report is appended to the GitHub Actions step summary. Comment posting never fails the workflow.
 

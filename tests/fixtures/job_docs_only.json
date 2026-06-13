@@ -1,0 +1,21 @@
+{
+  "jobId": "current-job-docs",
+  "status": "complete",
+  "errorCount": 0,
+  "warningCount": 0,
+  "infoCount": 0,
+  "totalPages": 24,
+  "ciCodeChanges": {
+    "compareUrl": "https://github.com/acme/repo/compare/base...head",
+    "changedFileCount": 2,
+    "linesAdded": 40,
+    "linesRemoved": 5,
+    "categoryCounts": {
+      "docs": 2
+    },
+    "changedPaths": [
+      "docs/guide.md",
+      "README.md"
+    ]
+  }
+}

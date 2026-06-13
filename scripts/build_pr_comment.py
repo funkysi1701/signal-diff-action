@@ -14,6 +14,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ci_change_categories import format_category_counts
 from http_common import merge_headers
+from review_files import format_files_requiring_review, select_files_requiring_review, should_show_files_requiring_review
 from risk_score import compute_risk_score, format_risk_score
 
 REPORT_TITLE = "## Signal Diff Report"
@@ -158,6 +159,49 @@ def _format_finding_line(finding: dict[str, Any]) -> str:
     return f"- {detail}"
 
 
+def _group_new_findings(findings: list[Any]) -> list[tuple[str, str, str, int]]:
+    """Group findings by (checkName, message) with the highest severity seen."""
+    groups: dict[tuple[str, str], tuple[str, int]] = {}
+    severity_rank = {"error": 3, "warning": 2, "info": 1}
+
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        check = str(_field(finding, "checkName", "CheckName", default="")).strip()
+        message = str(_field(finding, "message", "Message", default="")).strip()
+        severity = _finding_severity(finding)
+        key = (check, message)
+        count = groups.get(key, ("", 0))[1] + 1
+        existing_severity = groups.get(key, ("", 0))[0]
+        if severity_rank.get(severity, 0) >= severity_rank.get(existing_severity, 0):
+            groups[key] = (severity, count)
+        else:
+            groups[key] = (existing_severity, count)
+
+    ordered = sorted(groups.items(), key=lambda item: (-item[1][1], item[0][0].lower(), item[0][1].lower()))
+    return [(check, message, severity, count) for (check, message), (severity, count) in ordered]
+
+
+def _format_grouped_finding_line(*, check: str, message: str, severity: str, count: int) -> str:
+    label_parts = [part for part in (check, message) if part]
+    label = ": ".join(label_parts) if label_parts else "Finding"
+    count_suffix = f" ({count} page{'s' if count != 1 else ''})"
+    if severity:
+        return f"- **{severity.title()}** — {label}{count_suffix}"
+    return f"- {label}{count_suffix}"
+
+
+def _format_run_diff_example(run_diff: dict[str, Any]) -> str | None:
+    url = str(_field(run_diff, "exampleUrl", "ExampleUrl", default="")).strip()
+    before_title = str(_field(run_diff, "exampleBeforeTitle", "ExampleBeforeTitle", default="")).strip()
+    after_title = str(_field(run_diff, "exampleAfterTitle", "ExampleAfterTitle", default="")).strip()
+    if not url:
+        return None
+    if before_title or after_title:
+        return f'Example: [{url}]({url}) — title: "{before_title}" → "{after_title}"'
+    return f"Example: [{url}]({url})"
+
+
 def _format_delta(value: int) -> str:
     if value > 0:
         return f"+{value}"
@@ -293,6 +337,18 @@ def build_comment(
     lines.append(f"| Pages crawled | {pages} |")
     lines.append("")
 
+    review_files = select_files_requiring_review(
+        changed_paths,
+        category_counts=category_counts,
+        changed_file_count=changed_files,
+    )
+    if should_show_files_requiring_review(
+        category_counts=category_counts,
+        changed_file_count=changed_files,
+        selected=review_files,
+    ):
+        lines.extend(format_files_requiring_review(review_files))
+
     if isinstance(run_diff, dict):
         lines.append("### SEO findings (vs baseline)")
         lines.append("")
@@ -319,13 +375,27 @@ def build_comment(
 
         findings = _field(run_diff, "newFindings", "NewFindings", default=[]) or []
         if new_count > 0 and isinstance(findings, list) and findings:
+            grouped = _group_new_findings(findings)
             lines.append("**New findings:**")
             cap = max(1, max_new_findings)
-            listed = [item for item in findings if isinstance(item, dict)][:cap]
-            for finding in listed:
-                lines.append(_format_finding_line(finding))
-            if new_count > cap:
-                lines.append(f"- _…and {new_count - cap} more in Signal Diff._")
+            listed_groups = grouped[:cap]
+            for check, message, severity, count in listed_groups:
+                lines.append(
+                    _format_grouped_finding_line(
+                        check=check,
+                        message=message,
+                        severity=severity,
+                        count=count,
+                    )
+                )
+            remaining_groups = len(grouped) - len(listed_groups)
+            if remaining_groups > 0:
+                lines.append(f"- _…and {remaining_groups} more finding type(s) in Signal Diff._")
+            lines.append("")
+
+        example_line = _format_run_diff_example(run_diff)
+        if example_line:
+            lines.append(example_line)
             lines.append("")
 
         if resolved_count > 0:

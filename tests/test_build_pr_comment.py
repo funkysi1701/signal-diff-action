@@ -226,6 +226,112 @@ class BuildPrCommentTests(unittest.TestCase):
 
         self.assertIn("| Risk score | 🟡 Medium (4.0/10) |", body)
 
+    def test_files_requiring_review_section_for_high_attention_paths(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("### Files requiring review", body)
+        self.assertIn("`appsettings.Production.json` — production configuration", body)
+        self.assertNotIn("`src/app/Home.tsx`", body)
+
+    def test_files_requiring_review_omitted_for_docs_only(self) -> None:
+        job = _load("job_docs_only.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=0,
+            pages=24,
+            job_id="current-job-docs",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertNotIn("### Files requiring review", body)
+
+    def test_changed_paths_not_duplicated_in_comment_body(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        low_attention_paths = [
+            "src/app/Home.tsx",
+            "src/components/Layout.tsx",
+            "SignalDiff.Tests/Web/JobsHttpTests.cs",
+        ]
+        for path in low_attention_paths:
+            self.assertNotIn(f"`{path}`", body)
+
+        repo_section = body.split("### Repository changes", 1)[1].split("### Links", 1)[0]
+        self.assertNotIn("`", repo_section)
+
+    def test_new_findings_grouped_by_check_and_message(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn("**Warning** — MetaDescription: Description is too short (2 pages)", body)
+        new_findings_block = body.split("**New findings:**", 1)[1].split("Example:", 1)[0]
+        self.assertNotIn("[https://example.com/page-a](https://example.com/page-a)", new_findings_block)
+
+    def test_run_diff_example_title_before_after(self) -> None:
+        job = _load("job_with_run_diff.json")
+        body = build_comment(
+            job=job,
+            baseline_job=None,
+            status="complete",
+            errors=0,
+            warnings=14,
+            pages=120,
+            job_id="current-job-002",
+            api_base_url="https://api.signaldiff.dev",
+            workflow_run_url="",
+            fail_mode="error",
+            max_new_findings=5,
+        )
+
+        self.assertIn(
+            'Example: [https://example.com/page-a](https://example.com/page-a) — title: "Old Title" → "New Title"',
+            body,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
