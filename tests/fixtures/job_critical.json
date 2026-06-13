@@ -1,0 +1,21 @@
+{
+  "jobId": "current-job-003",
+  "status": "complete",
+  "errorCount": 1,
+  "warningCount": 0,
+  "infoCount": 0,
+  "totalPages": 42,
+  "runDiff": {
+    "newFindingCount": 1,
+    "resolvedFindingCount": 0,
+    "headline": "New blocking issue detected",
+    "newFindings": [
+      {
+        "url": "https://example.com/broken",
+        "severity": "Error",
+        "checkName": "StatusCode",
+        "message": "Returned HTTP 500"
+      }
+    ]
+  }
+}

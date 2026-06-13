@@ -1,0 +1,36 @@
+{
+  "jobId": "current-job-002",
+  "status": "complete",
+  "errorCount": 0,
+  "warningCount": 14,
+  "infoCount": 0,
+  "totalPages": 120,
+  "runDiff": {
+    "baselineJobId": "baseline-job-001",
+    "newFindingCount": 2,
+    "resolvedFindingCount": 0,
+    "headline": "2 new warnings on shared paths",
+    "impactSummary": "MetaDescription: Description is too short (2 new occurrence(s)).",
+    "newFindings": [
+      {
+        "url": "https://example.com/page-a",
+        "severity": "Warning",
+        "checkName": "MetaDescription",
+        "message": "Description is too short"
+      },
+      {
+        "url": "https://example.com/page-b",
+        "severity": "Warning",
+        "checkName": "MetaDescription",
+        "message": "Description is too short"
+      }
+    ]
+  },
+  "ciCodeChanges": {
+    "compareUrl": "https://github.com/acme/repo/compare/base...head",
+    "changedFileCount": 5
+  },
+  "ci": {
+    "workflowRunUrl": "https://github.com/acme/repo/actions/runs/99"
+  }
+}

@@ -358,15 +358,6 @@ runs:
             echo "errors=${errors}" >> "$GITHUB_OUTPUT"
             echo "warnings=${warnings}" >> "$GITHUB_OUTPUT"
             echo "pages=${pages}" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Signal Diff Crawl Result"
-              echo ""
-              echo "- Status: \`${status}\`"
-              echo "- Pages: \`${pages}\`"
-              echo "- Errors: \`${errors}\`"
-              echo "- Warnings: \`${warnings}\`"
-              echo "- Job ID: \`${{ steps.start.outputs.job_id }}\`"
-            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if (( SECONDS > deadline )); then
@@ -402,9 +393,8 @@ runs:
         echo "collected=false" >> "$GITHUB_OUTPUT"
         python3 "${{ github.action_path }}/scripts/collect_ci_code_changes.py" || true
 
-    - name: Build PR comment body
-      id: pr_comment
-      if: ${{ inputs.comment_on_pr == 'true' && github.event_name == 'pull_request' }}
+    - name: Build Signal Diff report
+      id: report
       continue-on-error: true
       shell: bash
       env:
@@ -419,21 +409,20 @@ runs:
         WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
         FAIL_MODE: ${{ inputs.fail_mode }}
         MAX_NEW_FINDINGS_IN_COMMENT: ${{ inputs.max_new_findings_in_comment }}
+        GITHUB_STEP_SUMMARY: ${{ env.GITHUB_STEP_SUMMARY }}
       run: |
         set -uo pipefail
         python3 "${{ github.action_path }}/scripts/build_pr_comment.py" || true
         if [[ ! -f /tmp/signaldiff-pr-comment.md ]]; then
-          {
-            echo "### Signal Diff Crawl Result"
-            echo ""
-            echo "- Status: \`${POLL_STATUS}\`"
-            echo "- Pages: \`${POLL_PAGES}\`"
-            echo "- Errors: \`${POLL_ERRORS}\`"
-            echo "- Warnings: \`${POLL_WARNINGS}\`"
-            echo "- Job ID: \`${JOB_ID}\`"
-            echo ""
-            echo "Review full details in the Signal Diff job history UI."
-          } > /tmp/signaldiff-pr-comment.md
+          POLL_STATUS="${{ steps.poll.outputs.status }}" \
+          POLL_ERRORS="${{ steps.poll.outputs.errors }}" \
+          POLL_WARNINGS="${{ steps.poll.outputs.warnings }}" \
+          POLL_PAGES="${{ steps.poll.outputs.pages }}" \
+          JOB_ID="${{ steps.start.outputs.job_id }}" \
+          API_BASE_URL="${{ inputs.api_base_url }}" \
+          WORKFLOW_RUN_URL="${{ inputs.workflow_run_url }}" \
+          FAIL_MODE="${{ inputs.fail_mode }}" \
+          python3 -c 'from pathlib import Path; import sys; sys.path.insert(0, "${{ github.action_path }}/scripts"); from build_pr_comment import build_fallback_comment; import os; body = build_fallback_comment(status=os.environ["POLL_STATUS"], errors=int(os.environ.get("POLL_ERRORS", "0") or "0"), warnings=int(os.environ.get("POLL_WARNINGS", "0") or "0"), pages=int(os.environ.get("POLL_PAGES", "0") or "0"), job_id=os.environ.get("JOB_ID", ""), api_base_url=os.environ.get("API_BASE_URL", ""), workflow_run_url=os.environ.get("WORKFLOW_RUN_URL", ""), fail_mode=os.environ.get("FAIL_MODE", "error")); Path("/tmp/signaldiff-pr-comment.md").write_text(body, encoding="utf-8"); summary = os.environ.get("GITHUB_STEP_SUMMARY", ""); (Path(summary).open("a", encoding="utf-8").write(body) if summary else None)'
         fi
 
     - name: Comment findings on PR

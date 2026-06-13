@@ -107,12 +107,15 @@ Agent jobs stay `pending` until an agent claims them, then move to `running` and
 
 ## PR comments
 
-When `comment_on_pr` is `true` on `pull_request` events, the action fetches the completed job (`GET` status URL), then posts a **best-effort** comment (`continue-on-error: true`). The comment includes crawl counts, a link to `/scan/{jobId}`, the workflow run link, and when available:
+When `comment_on_pr` is `true` on `pull_request` events, the action fetches the completed job (`GET` status URL), then posts a **best-effort** comment (`continue-on-error: true`). The comment is a decision-focused **Signal Diff Report**:
 
-- **Run diff** headline and a capped list of new findings (`runDiff.newFindings`)
-- **Code changes** compare link and changed-file count (`ciCodeChanges`)
+1. **Verdict** — pass/fail for your `fail_mode` plus severity (`Critical` / `Warning` / `Info` / `Improved` / `Compared`)
+2. **Summary table** — SEO errors/warnings, new vs resolved findings, files changed, pages crawled
+3. **SEO findings (vs baseline)** — headline, impact summary, capped new findings, baseline before/after counts
+4. **Repository changes** — GitHub compare link (separate from SEO findings)
+5. **Links** — Signal Diff scan URL and workflow run
 
-Comment posting never fails the workflow.
+The same report is appended to the GitHub Actions step summary. Comment posting never fails the workflow.
 
 ## Full example
 

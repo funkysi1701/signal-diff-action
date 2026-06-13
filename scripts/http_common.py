@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-ACTION_USER_AGENT = "signal-diff-action/1.6"
+ACTION_USER_AGENT = "signal-diff-action/1.7"
 
 
 def merge_headers(headers: dict[str, str] | None = None) -> dict[str, str]:
